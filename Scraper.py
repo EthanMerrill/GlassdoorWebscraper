@@ -63,9 +63,12 @@ def locate_all_reviews_on_page(driver):
     #This function looks for all the reviews on just one page and returns a list of elements corresponding to them. 
     try:
         reviewPageElements = []
+        reviewPageElementsIDs = []
         reviewPageElements = driver.find_elements_by_css_selector(".empReview")
-        fullReviewListHTML = driver.find_element_by_css_selector(".empReviews").get_attribute("innerHTML")
-        return reviewPageElements, fullReviewListHTML
+        for element in reviewPageElements:
+            reviewPageElementsIDs.append(element.get_attribute("id"))
+        # fullReviewListHTML = driver.find_element_by_css_selector(".empReviews").get_attribute("innerHTML")
+        return reviewPageElements, reviewPageElementsIDs
     except Exception as e:
         print(f"Exception:{e} occured, during the locate_all_reviews_on_page function")
 
@@ -87,44 +90,47 @@ def locate_all_reviews_on_page(driver):
 #         print(df)
 #     return df
 # %%
-def single_review_element_parser(driver, reviewElement):
+def single_review_element_parser(ReviewID, driver):
     #Takes a single review element and adds each element to a dict with a label
-    reviewDict = {}
-    subratingsList = []
-    #Get the headline
-    reviewDict["Date"] = reviewElement.find_element_by_class_name("date").get_attribute("datetime")
-    reviewDict["Headline"]=reviewElement.find_element_by_class_name("reviewLink").text
-    reviewDict["starRating"]=reviewElement.find_element_by_class_name("v2__EIReviewsRatingsStylesV2__ratingNum v2__EIReviewsRatingsStylesV2__small").text
-    # Parse the sub ratings:
-    subratingsElements = reviewElement.find_elements_by_class("minor")
-    
-    for element in subratingsElements:
-        subratingsList.append(element.find_element_by_class_name("subRatings__SubRatingsStyles__gdBars gdBars gdRatings med").get_attribute("title"))
-    # Add each sub rating in the list to the dict:
-    reviewDict["Work/Life Balance"] = subratingsList[0]
-    reviewDict["Culture & Values"] = subratingsList[1]
-    reviewDict["Career Opportunities"] = subratingsList[2]
-    reviewDict["Compensation and Benefits"] =subratingsList[3]
-    reviewDict["Senior Management"] = subratingsList[4]
-    # Split the current title to get the title and employment status into two categories
-    # !!! Will need to break out Title in future
-    reviewDict["Employment Status"], reviewDict["Location"] = reviewElement.find_element_by_class_name("authorJobTitle middle").text.split(" - ")
-    reviewDict["Recommends"], reviewDict["Positive Outlook"], reviewDict["CEO Approval"]=reviewElement.find_element_by_class_name("row reviewBodyCell recommends").find_elements_by_css_selector("span").text
-    reviewDict["Time working at company"]=reviewElement.find_element_by_class_name("mainText mb-0").text
-    reviewDict["Pros"] = reviewElement.find_element_by_css_selector("span[data-test='pros']").text
-    reviewDict["Cons"] = reviewElement.find_element_by_css_selector("span[data-test='cons']").text
+    try: 
+        reviewDict = {}
+        subratingsList = []
+        #Get the headline
+        # reviewDict["Date"] = driver.find_element_by_css_selector(f"#{ReviewIDs} .date").get_attribute("datetime")
+        reviewDict["Headline"]=driver.find_element_by_css_selector(f"#{ReviewID} .reviewLink").text
+        reviewDict["starRating"]=driver.find_element_by_css_selector(f"#{ReviewID} .v2__EIReviewsRatingsStylesV2__small").text
+        # Parse the sub ratings:
+        subratingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .subRatings__SubRatingsStyles__gdBars.gdBars.gdRatings.med")
+        
+        for element in subratingsElements:
+            subratingsList.append(element.get_attribute("title"))
+        # Add each sub rating in the list to the dict:
+        reviewDict["Work/Life Balance"] = subratingsList[0]
+        reviewDict["Culture & Values"] = subratingsList[1]
+        reviewDict["Career Opportunities"] = subratingsList[2]
+        reviewDict["Compensation and Benefits"] =subratingsList[3]
+        reviewDict["Senior Management"] = subratingsList[4]
+        # Split the current title to get the title and employment status into two categories
+        # !!! Will need to break out Title in future
+        reviewDict["Employment Status"], reviewDict["Location"] = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text.split(" - ")
+        reviewDict["Recommends"], reviewDict["Positive Outlook"], reviewDict["CEO Approval"] = driver.find_element_by_css_selector(f"#{ReviewID} .row.reviewBodyCell.recommends").find_elements_by_css_selector("span").text
+        reviewDict["Time working at company"]=driver.find_element_by_class_css_selector(f"#{ReviewID} .mainText.mb-0").text
 
-    return reviewDict, driver
+        reviewDict["Pros"] = driver.find_element_by_css_selector(f"#{ReviewID} span[data-test='pros']").get_attribute("innerHTML")
+        reviewDict["Cons"] = driver.find_element_by_css_selector(f"#{ReviewID} span[data-test='cons']").get_attribute("innerHTML")
 
+        return reviewDict, driver
+    except Exception as e:
+        print(f"Exception:{e} occured, during the single_review_element_parser function")
 
     # %%
     # need to pass the driver to keep it alive
-def review_one_page_parser(reviewElementsList, driver, dataframe=None):
+def review_one_page_parser(reviewIDList, driver, dataframe=None):
     if dataframe == None:
         df = pd.DataFrame()
 
-    for empReview in reviewElementsList:
-        data,driver = single_review_element_parser(driver, empReview)
+    for empReview in reviewIDList:
+        data,driver = single_review_element_parser(empReview, driver)
         print(data)
         # data = data.split('\n')
         df2=pd.DataFrame(data)
@@ -153,8 +159,8 @@ def main():
     navigate_to_url(driver, parameters.parameters.get("companyUrl"), True)
     #locate all of the reviews on the page
     time.sleep(8)
-    reviewElementsList, fullReviewListHTML = locate_all_reviews_on_page(driver)
-    reviewsDataframe = review_one_page_parser(reviewElementsList, driver)
+    reviewElementsList, ReviewIDs = locate_all_reviews_on_page(driver)
+    reviewsDataframe = review_one_page_parser(ReviewIDs, driver)
     print(reviewsDataframe.head)
     
     # scrape_one_review(reviewElements)
