@@ -2,6 +2,10 @@ from selenium import webdriver
 # from selenium.webdriver.common.keys import Keys
 # from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+# for waiting for page loads
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import re
 import json
@@ -68,7 +72,7 @@ def locate_all_reviews_on_page(driver):
         for element in reviewPageElements:
             reviewPageElementsIDs.append(element.get_attribute("id"))
         # fullReviewListHTML = driver.find_element_by_css_selector(".empReviews").get_attribute("innerHTML")
-        return reviewPageElements, reviewPageElementsIDs
+        return reviewPageElements, reviewPageElementsIDs,driver
     except Exception as e:
         print(f"Exception:{e} occured, during the locate_all_reviews_on_page function")
 
@@ -95,26 +99,79 @@ def single_review_element_parser(ReviewID, driver):
     try: 
         reviewDict = {}
         subratingsList = []
+        miniRatingsElements = []
+        miniRatingsElementsText = []
         #Get the headline
         # reviewDict["Date"] = driver.find_element_by_css_selector(f"#{ReviewIDs} .date").get_attribute("datetime")
         reviewDict["Headline"]=driver.find_element_by_css_selector(f"#{ReviewID} .reviewLink").text
         reviewDict["starRating"]=driver.find_element_by_css_selector(f"#{ReviewID} .v2__EIReviewsRatingsStylesV2__small").text
         # Parse the sub ratings:
         subratingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .subRatings__SubRatingsStyles__gdBars.gdBars.gdRatings.med")
-        
-        for element in subratingsElements:
-            subratingsList.append(element.get_attribute("title"))
-        # Add each sub rating in the list to the dict:
-        reviewDict["Work/Life Balance"] = subratingsList[0]
-        reviewDict["Culture & Values"] = subratingsList[1]
-        reviewDict["Career Opportunities"] = subratingsList[2]
-        reviewDict["Compensation and Benefits"] =subratingsList[3]
-        reviewDict["Senior Management"] = subratingsList[4]
+        # Only Parse Sub ratings if they exist
+        if len(subratingsElements)>0:
+            for element in subratingsElements:
+                subratingsList.append(element.get_attribute("title"))
+            # Add each sub rating in the list to the dict:
+                for text in subratingsList:
+                    if "Work/Life Balance" in text:
+                        reviewDict["Work/Life Balance"] = text
+                    if "Culture & Values" in text:
+                        reviewDict["Culture & Values"] = text
+                    if "Career Opportunities" in text:
+                        reviewDict["Career Opportunities"] = text
+                    if "Compensation and Benefits" in text:
+                        reviewDict["Compensation and Benefits"] = text
+                    if "Senior Management" in text:
+                        reviewDict["Senior Management"] = text
+
+        # else: 
+        #     reviewDict["Work/Life Balance"] = "N/A"
+        #     reviewDict["Culture & Values"] = "N/A"
+        #     reviewDict["Career Opportunities"] = "N/A"
+        #     reviewDict["Compensation and Benefits"] ="N/A"
+        #     reviewDict["Senior Management"] = "N/A"
         # Split the current title to get the title and employment status into two categories
         # !!! Will need to break out Title in future
-        reviewDict["Employment Status"], reviewDict["Location"] = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text.split(" - ")
-        reviewDict["Recommends"], reviewDict["Positive Outlook"], reviewDict["CEO Approval"] = driver.find_element_by_css_selector(f"#{ReviewID} .row.reviewBodyCell.recommends").find_elements_by_css_selector("span").text
-        reviewDict["Time working at company"]=driver.find_element_by_class_css_selector(f"#{ReviewID} .mainText.mb-0").text
+        # check the sub header which optionally contains location, title, and employment status
+        subheader = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text
+        # Current Employee - Project Manager in Charlotte, NC
+        if " - " and " in " in subheader:
+            reviewDict['Employment Status'], afterEmploymentStatus = subheader.split(" - ")
+            reviewDict["Title"], reviewDict['Location'] = afterEmploymentStatus.split(" in ")
+        
+        elif " in " in subheader: 
+            reviewDict["Title"], reviewDict['Location'] = afterEmploymentStatus.split(" in ")
+        elif " - " in subheader: 
+            reviewDict['Employment Status'], reviewDict["Title"] = subheader.split(" - ")
+        else:
+            reviewDict["Title"]=subheader
+        # if 
+        # reviewDict["Employment Status"], reviewDict["Location"] = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text.split(" - ")
+        miniRatingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .row.reviewBodyCell.recommends span")
+
+        #There has to be a more pythonic way of doing this:
+        if len(miniRatingsElements)>0:
+            for element in miniRatingsElements:
+                miniRatingsElementsText.append(element.get_attribute("innerHTML"))
+
+            # These attributes are optional, so if they are available, add them to the dict, if not add a placeholder
+            for text in miniRatingsElementsText:
+                if "Outlook" in text:
+                    reviewDict["Positive Outlook"] = text
+                elif "Recommend" in text:
+                    reviewDict["Recommends"] = text
+                elif "CEO" in text:
+                    reviewDict["CEO Approval"] = text
+                # else: 
+                #     reviewDict["Positive Outlook"] = "N/A"
+                #     reviewDict["Recommends"] = "N/A"
+                #     reviewDict["CEO Approval"] = "N/A"
+        # else:
+        #     reviewDict["Positive Outlook"] = "N/A"
+        #     reviewDict["Recommends"] = "N/A"
+        #     reviewDict["CEO Approval"] = "N/A"
+
+        reviewDict["Time working at company"] = driver.find_element_by_css_selector(f"#{ReviewID} .mainText.mb-0").text
 
         reviewDict["Pros"] = driver.find_element_by_css_selector(f"#{ReviewID} span[data-test='pros']").get_attribute("innerHTML")
         reviewDict["Cons"] = driver.find_element_by_css_selector(f"#{ReviewID} span[data-test='cons']").get_attribute("innerHTML")
@@ -122,29 +179,50 @@ def single_review_element_parser(ReviewID, driver):
         return reviewDict, driver
     except Exception as e:
         print(f"Exception:{e} occured, during the single_review_element_parser function")
-
+        pass
     # %%
     # need to pass the driver to keep it alive
-def review_one_page_parser(reviewIDList, driver, dataframe=None):
-    if dataframe == None:
-        df = pd.DataFrame()
-
+def review_one_page_parser(reviewIDList, driver, df):
+    # scrapes all reviews on one page, puts in data frame returns frame
     for empReview in reviewIDList:
-        data,driver = single_review_element_parser(empReview, driver)
+        data, driver = single_review_element_parser(empReview, driver)
         print(data)
         # data = data.split('\n')
-        df2=pd.DataFrame(data)
+        df2=pd.DataFrame.from_dict([data])
         # print(f"reviewElementsList[empReview]: {empReview} /n \n ")
         # print(empReview.text)
         # [x.split(';') for x in data.split('\n')]
         df = df.append(df2, ignore_index=True)
         print(df)
-    return df
+    return df, driver
 
-# def next_glassdoor_page (driver):
-#     # Selects the next page at the bottom of the reviews list. will also need to check for the last page in the doc
+def next_page(driver):
+    lastPage = False
+    try:
+        driver.find_element_by_css_selector(".pagination__ArrowStyle__nextArrow").click()
+        time.sleep(10)
+        wait = WebDriverWait(driver, 25)
+        element = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.pagination__ArrowStyle__nextArrow  ')))
+    except Exception as e:
+        print(f"Last Page {e}")
+        lastPage = True
+    return driver, lastPage
 
-#     return driver
+def all_reviews_scraper(driver):
+    # takes a driver open to a company review page. Creates an empty dataframe passes frame to review one page parser, then clicks next page and repeats. Returns a full dataframe
+    df = pd.DataFrame()
+    lastPage = False
+    # get review Ids on the given page 
+    while lastPage==False:
+        reviewElements, reviewIDList, driver = locate_all_reviews_on_page(driver)
+        df, driver = review_one_page_parser(reviewIDList, driver, df)
+        driver, lastPage = next_page(driver)
+    # Scrape the Final Page 
+    reviewElements, reviewIDList, driver = locate_all_reviews_on_page(driver)
+    df, driver = review_one_page_parser(reviewIDList, driver, df)
+    return df, driver
+
+
 
 # %%
 def main():
@@ -159,9 +237,8 @@ def main():
     navigate_to_url(driver, parameters.parameters.get("companyUrl"), True)
     #locate all of the reviews on the page
     time.sleep(8)
-    reviewElementsList, ReviewIDs = locate_all_reviews_on_page(driver)
-    reviewsDataframe = review_one_page_parser(ReviewIDs, driver)
-    print(reviewsDataframe.head)
+    finaldf, driver = all_reviews_scraper(driver)
+    print(finaldf.head)
     
     # scrape_one_review(reviewElements)
 if __name__ == "__main__":
