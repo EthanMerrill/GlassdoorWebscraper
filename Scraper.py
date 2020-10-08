@@ -12,6 +12,9 @@ import json
 import time
 import parameters
 import pandas as pd
+import datetime
+# from time import strptime
+
 # from bs4 import BeautifulSoup
 
 def initialize_driver(debugMode=False):
@@ -97,41 +100,37 @@ def locate_all_reviews_on_page(driver):
 def single_review_element_parser(ReviewID, driver):
     #Takes a single review element and adds each element to a dict with a label
     try: 
-        reviewDict = {}
-        subratingsList = []
+        reviewDict = {"Location":None,"Title":None,"Employment Status":None}
+        # subratingsDict = {}
         miniRatingsElements = []
         miniRatingsElementsText = []
         #Get the headline
-        # reviewDict["Date"] = driver.find_element_by_css_selector(f"#{ReviewIDs} .date").get_attribute("datetime")
+        try:
+            reviewDict["Date"] = driver.find_element_by_css_selector(f"#{ReviewID} .date").get_attribute("datetime")
+            convertedDate = datetime.datetime.strptime(reviewDict["Date"][0:33], '%a %b %d %Y %H:%M:%S %Z%z')
+
+        except Exception as e:
+            print("date not found:"+e)
+            reviewDict["Date"] = None
+            reviewDict["Day"] = None
+            reviewDict["Month"] = None
+            reviewDict["Year"] = None
+            pass
+
+        reviewDict["PowerBIDate"] = convertedDate.strftime("%m/%d/%Y")
+        reviewDict["Time(NOT GMT Adjusted)"] = convertedDate.strftime("%H:%M:%S")
         reviewDict["Headline"]=driver.find_element_by_css_selector(f"#{ReviewID} .reviewLink").text
-        reviewDict["starRating"]=driver.find_element_by_css_selector(f"#{ReviewID} .v2__EIReviewsRatingsStylesV2__small").text
+        reviewDict["Star Rating"]=driver.find_element_by_css_selector(f"#{ReviewID} .v2__EIReviewsRatingsStylesV2__small").text
         # Parse the sub ratings:
-        subratingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .subRatings__SubRatingsStyles__gdBars.gdBars.gdRatings.med")
+        # subratingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .subRatings__SubRatingsStyles__gdBars.gdBars.gdRatings.med")
+        subratingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .undecorated li")
+
         # Only Parse Sub ratings if they exist
         if len(subratingsElements)>0:
             for element in subratingsElements:
-                subratingsList.append(element.get_attribute("title"))
-            # Add each sub rating in the list to the dict:
-                for text in subratingsList:
-                    if "Work/Life Balance" in text:
-                        reviewDict["Work/Life Balance"] = text
-                    if "Culture & Values" in text:
-                        reviewDict["Culture & Values"] = text
-                    if "Career Opportunities" in text:
-                        reviewDict["Career Opportunities"] = text
-                    if "Compensation and Benefits" in text:
-                        reviewDict["Compensation and Benefits"] = text
-                    if "Senior Management" in text:
-                        reviewDict["Senior Management"] = text
+                reviewDict[element.find_element_by_css_selector("div").get_attribute("innerHTML")] = element.find_element_by_css_selector(".subRatings__SubRatingsStyles__gdBars.gdBars.gdRatings.med").get_attribute("title")
 
-        # else: 
-        #     reviewDict["Work/Life Balance"] = "N/A"
-        #     reviewDict["Culture & Values"] = "N/A"
-        #     reviewDict["Career Opportunities"] = "N/A"
-        #     reviewDict["Compensation and Benefits"] ="N/A"
-        #     reviewDict["Senior Management"] = "N/A"
         # Split the current title to get the title and employment status into two categories
-        # !!! Will need to break out Title in future
         # check the sub header which optionally contains location, title, and employment status
         subheader = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text
         # Current Employee - Project Manager in Charlotte, NC
@@ -145,9 +144,8 @@ def single_review_element_parser(ReviewID, driver):
             reviewDict['Employment Status'], reviewDict["Title"] = subheader.split(" - ")
         else:
             reviewDict["Title"]=subheader
-        # if 
-        # reviewDict["Employment Status"], reviewDict["Location"] = driver.find_element_by_css_selector(f"#{ReviewID} .authorJobTitle.middle").text.split(" - ")
-        miniRatingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .row.reviewBodyCell.recommends span")
+  
+         miniRatingsElements = driver.find_elements_by_css_selector(f"#{ReviewID} .row.reviewBodyCell.recommends span")
 
         #There has to be a more pythonic way of doing this:
         if len(miniRatingsElements)>0:
@@ -162,14 +160,6 @@ def single_review_element_parser(ReviewID, driver):
                     reviewDict["Recommends"] = text
                 elif "CEO" in text:
                     reviewDict["CEO Approval"] = text
-                # else: 
-                #     reviewDict["Positive Outlook"] = "N/A"
-                #     reviewDict["Recommends"] = "N/A"
-                #     reviewDict["CEO Approval"] = "N/A"
-        # else:
-        #     reviewDict["Positive Outlook"] = "N/A"
-        #     reviewDict["Recommends"] = "N/A"
-        #     reviewDict["CEO Approval"] = "N/A"
 
         reviewDict["Time working at company"] = driver.find_element_by_css_selector(f"#{ReviewID} .mainText.mb-0").text
 
@@ -180,6 +170,7 @@ def single_review_element_parser(ReviewID, driver):
     except Exception as e:
         print(f"Exception:{e} occured, during the single_review_element_parser function")
         pass
+        return reviewDict, driver
     # %%
     # need to pass the driver to keep it alive
 def review_one_page_parser(reviewIDList, driver, df):
@@ -239,6 +230,10 @@ def main():
     time.sleep(8)
     finaldf, driver = all_reviews_scraper(driver)
     print(finaldf.head)
+    fileSaveLocation = parameters.parameters.get("outputDirectory")+"/"+parameters.parameters.get("companyUrl")[34:39]+".json"
+    print(f"saving to: {fileSaveLocation}")
+    finaldf.to_json(fileSaveLocation)
+
     
     # scrape_one_review(reviewElements)
 if __name__ == "__main__":
